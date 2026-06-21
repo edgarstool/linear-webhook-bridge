@@ -1,0 +1,180 @@
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │  templates/route.yaml                                                │
+# │  Routing template for the linear-webhook-bridge 4-layer pipeline.    │
+# │                                                                      │
+# │  Pipeline:                                                           │
+# │    Layer 1  Linear webhook  →  raw event POST                        │
+# │    Layer 2  Hermes session mapper  →  open/continued session        │
+# │    Layer 3  agent runner  →  execute task                           │
+# │    Layer 4  Linear API 回寫  →  comment / update issue               │
+# │                                                                      │
+# │  Override this template with your own values.                         │
+# └──────────────────────────────────────────────────────────────────────┘
+---
+version: "1.0"
+
+# ── Pipeline topology ──────────────────────────────────────────────────
+pipeline:
+  - layer: "linear-webhook"
+    description: "HTTP ingress; validates HMAC, queues event"
+    entry: "entrypoint:webhook_ingress"
+
+  - layer: "hermes-session-mapper"
+    description: "Maps Linear event → Hermes session ID"
+    entry: "mapper:event_to_session"
+
+  - layer: "agent-runner"
+    description: "Runs the agent loop inside the session"
+    entry: "runner:execute"
+
+  - layer: "linear-api-writeback"
+    description: "Posts formatted output back to Linear"
+    entry: "writeback:post_comment"
+
+# ── Auth / validation ──────────────────────────────────────────────────
+validation:
+  hmac:
+    header: "Linear-Signature"                # Linear-specific (NOT X-Hub-Signature-256)
+    secret_ref: "{{WEBHOOK_SECRET}}"          # environment variable or secret store key
+    algo: "sha256"
+    encoding: "hex"                           # Linear sends hex-encoded HMAC-SHA256
+    body_source: "raw"                        # MUST verify against raw request body
+  timeout_ms: 5000
+
+# ── Ingress hardening (required by SKILL.md verification checklist) ────
+ingress:
+  # Reject events whose webhookTimestamp is outside this window (anti-replay).
+  # Linear SDK reference uses 60_000 ms tolerance.
+  freshness_window_ms: 60000
+
+  # When true, ingress responds 200 within ~100ms and hands off to a worker
+  # queue. Required because Linear retries after >5s and the agent run is
+  # always longer than that.
+  fast_ack: true
+
+  # Drop events whose actor.id matches any entry — primary use is filtering
+  # the bridge's own bot user to prevent feedback loops where Hermes comments
+  # cause new Comment:created events.
+  actor_id_blacklist:
+    - "{{HERMES_BOT_ACTOR_ID}}"
+
+# ── Event routing rules ────────────────────────────────────────────────
+# Each rule matches a Linear event type and defines:
+#   - session template   (key into session_templates)
+#   - agent config ref   (key into agent_runners)
+#   - output template    (key into output_templates)
+#   - rate_limit         (optional, events per minute per resource)
+
+rules:
+  - event: "Issue:created"
+    session: "issue_task"
+    agent: "default"
+    output: "issue_comment"
+    rate_limit: 5
+
+  - event: "Issue:updated"
+    session: "issue_task"
+    agent: "default"
+    output: "issue_comment"
+    rate_limit: 10
+
+  - event: "Issue:deleted"
+    session: "issue_audit"
+    agent: "logger"
+    output: "audit_log"
+    rate_limit: 20
+
+  - event: "Comment:created"
+    # Only react to comments on issues, not on projects.
+    filter:
+      parent_type: "Issue"
+    session: "issue_task"
+    agent: "default"
+    output: "issue_comment"
+    rate_limit: 10
+
+# ── Session templates ──────────────────────────────────────────────────
+# These define how Hermes session state is initialized from a Linear event.
+session_templates:
+  issue_task: |
+    session_type: task
+    context:
+      team_id: "{{event.teamId}}"
+      issue_id: "{{event.data.id}}"
+      issue_identifier: "{{event.data.identifier}}"
+      title: "{{event.data.title}}"
+      description: "{{event.data.description}}"
+      url: "{{event.data.url}}"
+      state: "{{event.data.state.name}}"
+      priority: "{{event.data.priority}}"
+      assignee: "{{event.data.assignee.name}}"
+    resume_hint: "Continue from last agent turn if session exists."
+
+  issue_audit: |
+    session_type: audit
+    context:
+      team_id: "{{event.teamId}}"
+      issue_id: "{{event.data.id}}"
+      identifier: "{{event.data.identifier}}"
+      event: "deleted"
+
+# ── Agent runners ──────────────────────────────────────────────────────
+agent_runners:
+  default:
+    mode: "inline"              # inline | subprocess | http
+    model: "{{DEFAULT_MODEL:-stepfun/step-3.7-flash:free}}"
+    max_turns: 20
+    allow_tools:                # enable per agent needs
+      - "terminal"
+      - "file"
+      - "web_search"
+    memory:
+      scope: "session"
+      backend: "obsidian_vault" # card-level context; vault path configured elsewhere
+
+  logger:
+    mode: "inline"
+    model: "minimal"
+    max_turns: 1
+    allow_tools: []
+
+# ── Output / writeback templates ───────────────────────────────────────
+# These are rendered (Jinja2-like) and posted back to Linear via API.
+output_templates:
+  issue_comment: |
+    🤖 **Hermes linear-webhook-bridge**
+
+    Event: `{{event.type}}`
+    Issue: [{{event.data.identifier}}]({{event.data.url}})
+    Status: processed at {{timestamp}}
+
+    ---
+    {{agent_output}}
+
+  audit_log: |
+    📋 Bridge audit log
+    - Deleted issue: {{event.data.identifier}}
+    - Timestamp: {{timestamp}}
+    - Event ID: {{event.id}}
+
+# ── Retry / error handling ─────────────────────────────────────────────
+retry:
+  max_attempts: 3
+  backoff:
+    type: exponential
+    base_ms: 500
+    max_ms: 5000
+  dead_letter:
+    action: log          # log | requeue | alert
+    target: "dead_letter_queue"
+
+# ── Observability ──────────────────────────────────────────────────────
+observability:
+  log_level: "info"
+  metrics:
+    - "events_received"
+    - "events_processed"
+    - "events_failed"
+    - "session_open_duration_ms"
+    - "linear_api_latency_ms"
+  tracing: true

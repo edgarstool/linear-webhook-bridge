@@ -1,0 +1,48 @@
+# Deployment artifacts
+.deploy-rollback/
+backups/
+*.log
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+
+# State / runtime
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+.session-map/
+.dead-letter/
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.secret
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
