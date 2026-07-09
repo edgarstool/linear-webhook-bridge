@@ -54,12 +54,16 @@ linear-webhook-bridge/
 ├── CHANGELOG.md                          # release history
 ├── LICENSE                               # MIT
 ├── .gitignore
+├── docs/
+│   ├── e2e-test-runbook.md               # end-to-end verification steps
+│   └── risk-analysis.md                  # security / idempotency / session-mapping (oracle)
 ├── scripts/
 │   └── linear_webhook_subscribe.sh       # idempotent GraphQL webhook create/verify
+│   ├── send_test_webhook.py              # signed test webhook sender
+│   ├── verify_signature.py               # raw-body HMAC verifier
+│   └── dedupe_check.py                   # L1/L2/L3 dedupe key inspector
 ├── templates/
 │   └── route.yaml                        # pipeline topology + routing rules
-└── docs/
-    └── risk-analysis.md                  # security / idempotency / session-mapping (oracle)
 ```
 
 ## Four-layer pipeline
@@ -92,6 +96,16 @@ Critical timing: **layer 1 must respond 200 within 5 s** (Linear's hard timeout)
 | `DEFAULT_MODEL` | Fallback model when an issue doesn't pin one |
 
 Full list and tuning notes in [`templates/route.yaml`](./templates/route.yaml) and [`SKILL.md` § Configuration](./SKILL.md#configuration).
+
+## Verification Toolkit
+
+Use these helpers when validating the full webhook flow:
+
+- [`scripts/send_test_webhook.py`](./scripts/send_test_webhook.py) sends a signed Linear-compatible webhook to your bridge.
+- Use `--raw-body-file` with [`scripts/send_test_webhook.py`](./scripts/send_test_webhook.py) if you want an exact body file for later signature verification.
+- [`scripts/verify_signature.py`](./scripts/verify_signature.py) verifies `Linear-Signature` against the raw body.
+- [`scripts/dedupe_check.py`](./scripts/dedupe_check.py) prints the L1/L2/L3 dedupe keys for a captured payload.
+- [`docs/e2e-test-runbook.md`](./docs/e2e-test-runbook.md) walks through manual webhook, real `@mention`, and long-running-task validation.
 
 ## Risks & mitigations
 

@@ -411,8 +411,10 @@ actor_id_blacklist: ["${HERMES_BOT_ACTOR_ID}"]
 - `experimental/risk-analysis.md` — oracle 出品的完整風險分析（簽章、冪等、session mapping、rate limit）
 - `templates/route.yaml` — 4 層管線的宣告式路由設定
 - `scripts/linear_webhook_subscribe.sh` — idempotent webhook 訂閱腳本
+- `scripts/send_test_webhook.py` — 發送帶簽章的測試 webhook 到 bridge
 - `scripts/verify_signature.py` — 完整簽章驗證實作
 - `scripts/dedupe_check.py` — 三層 dedupe 查詢實作
+- `docs/e2e-test-runbook.md` — 三個端到端驗證案例與觀察點
 - [Linear Webhooks](https://linear.app/developers/webhooks) — 官方文件，HMAC-SHA256 + retry 規則
 - [Linear Rate Limiting](https://linear.app/developers/rate-limiting) — 限額與 leaky bucket 演算法
 - Hermes session 結構：`hermes-agent/agent/agent_init.py:1031-1049`、`hermes_state.py:521-548`
