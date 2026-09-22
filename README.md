@@ -1,5 +1,7 @@
 # linear-webhook-bridge
 
+> **LEGACY / MIGRATION-ONLY (2026-09-22):** Linear is retired as EDGAR-OS's active task ledger and webhook control plane. This repository is preserved for migration provenance and historical reconstruction. Do not deploy or subscribe new Linear webhooks. Target migration system: YouTrack Cloud (<https://edgars.youtrack.cloud>). Treat this repository as archival until full export/import/reconciliation is complete.
+
 > Hermes skill: bridge Linear webhooks into Hermes agent sessions.
 > Four-layer pipeline `Linear webhook → session mapper → agent runner → Linear API writeback`.
 
