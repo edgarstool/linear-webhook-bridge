@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -63,7 +64,8 @@ def accept(db, raw, token, provided, project, bot_login):
     comment = payload["comments"][0]
     if not isinstance(comment.get("text"), str) or not comment["text"].strip():
         return 200, "ignored empty comment"
-    if (comment.get("author") or {}).get("login") == bot_login or "<!-- edgar-agent:" in comment["text"]:
+    author = comment.get("author")
+    if (isinstance(author, dict) and author.get("login") == bot_login) or "<!-- edgar-agent:" in comment["text"]:
         return 200, "ignored bot comment"
     now = int(time.time())
     with db:
@@ -88,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(413)
             return
         raw = self.rfile.read(size)
-        with connect(self.server.db_path) as db:
+        with closing(connect(self.server.db_path)) as db:
             status, message = accept(db, raw, self.server.token,
                                      self.headers.get("X-YouTrack-Token", ""),
                                      self.server.project, self.server.bot_login)
